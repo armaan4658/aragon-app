@@ -21,37 +21,72 @@ export const useImageUpload = () => {
       resetSubjectBaseline();
     }
 
+    // Dynamically import heic2any only if a HEIC file exists in the fileList
+    const hasHEIC = Array.from(fileList).some(f => f.name.toLowerCase().endsWith('.heic'));
+    let heic2any = null;
+    if (hasHEIC) {
+      try {
+        const module = await import('heic2any');
+        heic2any = module.default;
+      } catch (err) {
+        console.error('Failed to load HEIC converter module:', err);
+      }
+    }
+
     for (let i = 0; i < fileList.length; i++) {
-      const file = fileList[i];
+      let file = fileList[i];
       const isHEIC = file.name.toLowerCase().endsWith('.heic');
       const isValidType = ALLOWED_TYPES.includes(file.type) || isHEIC;
       const isValidSize = file.size <= MAX_SIZE;
-      const previewUrl = URL.createObjectURL(file);
 
       if (!isValidType) {
-        invalid.push({ id: crypto.randomUUID(), name: file.name, previewUrl, reason: 'Unsupported format.' });
+        invalid.push({ id: crypto.randomUUID(), name: file.name, previewUrl: '', reason: 'Unsupported format.' });
         continue;
-      } 
+      }
       if (!isValidSize) {
-        invalid.push({ id: crypto.randomUUID(), name: file.name, previewUrl, reason: 'File exceeds 12MB limit.' });
+        invalid.push({ id: crypto.randomUUID(), name: file.name, previewUrl: '', reason: 'File exceeds 12MB limit.' });
         continue;
+      }
+
+      let previewUrl = '';
+
+      // ✅ Handle HEIC conversion to readable JPEG blob at runtime
+      if (isHEIC && heic2any) {
+        try {
+          const convertedBlob = await heic2any({
+            blob: file,
+            toType: 'image/jpeg',
+            quality: 0.85
+          });
+
+          // Re-wrap the converted blob into a standard File object to preserve matching names downstream
+          const newFileName = file.name.replace(/\.heic$/i, '.jpg');
+          file = new File([convertedBlob], newFileName, { type: 'image/jpeg' });
+          previewUrl = URL.createObjectURL(convertedBlob);
+        } catch (conversionError) {
+          console.error('HEIC parsing exception:', conversionError);
+          invalid.push({ id: crypto.randomUUID(), name: file.name, previewUrl: '', reason: 'Failed to transcode HEIC image format.' });
+          continue;
+        }
+      } else {
+        previewUrl = URL.createObjectURL(file);
       }
 
       // Check if we already have accepted photos in state to see if this requires matching a target subject
       const isFirstSubjectPhoto = (acceptedImages.length === 0 && valid.length === 0);
 
-      // Run our robust multi-layered ML check
+      // Run our updated multi-layered ML check
       const mlEvaluation = await evaluateImageQuality(previewUrl, isFirstSubjectPhoto);
-      
+
       if (!mlEvaluation.isValid) {
         invalid.push({
           id: crypto.randomUUID(),
           name: file.name,
           previewUrl,
-          reason: mlEvaluation.reason, // Displays the explicit rejection string directly in the UI
+          reason: mlEvaluation.reason,
         });
       } else {
-        file.previewUrl = previewUrl; 
+        file.previewUrl = previewUrl;
         valid.push(file);
       }
     }
