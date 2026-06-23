@@ -1,10 +1,10 @@
 import React from 'react';
 import { ImageCard } from './ImageCard';
-import { useImageUpload } from '../hooks/useImageUpload';
 
-export const ImageGrid = ({ images, variant }) => {
+// Accept onDeleteImage from App.jsx props destructuring
+export const ImageGrid = ({ images, variant, onDeleteImage }) => {
   if (!images || images.length === 0) return null;
-  const { deleteImage } = useImageUpload();
+
   return (
     <div
       style={{
@@ -15,7 +15,13 @@ export const ImageGrid = ({ images, variant }) => {
       }}
     >
       {images.map((img) => (
-        <ImageCard key={img.id} image={img} variant={variant} onDelete={() => deleteImage(img.id, variant)}/>
+        <ImageCard 
+          key={img.id} 
+          image={img} 
+          variant={variant} 
+          // Run the callback coming from App.jsx's single source of truth hook
+          onDelete={() => onDeleteImage(img.id, variant)}
+        />
       ))}
     </div>
   );
